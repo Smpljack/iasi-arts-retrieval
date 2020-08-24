@@ -2,12 +2,13 @@ import os
 import numpy as np
 from scipy.linalg import inv
 from scipy.interpolate import interp1d
+import matplotlib.pyplot as plt
 
 from typhon.arts.workspace import arts_agenda
 from typhon.arts import xml
 from typhon.physics import wavenumber2frequency, frequency2wavenumber, \
     constants, planck, radiance2planckTb, moist_lapse_rate, relative_humidity2vmr, e_eq_mixed_mk
-
+from typhon.plots import profile_p
 
 def setup_retrieval_paths(project_path):
     """
@@ -21,7 +22,7 @@ def setup_retrieval_paths(project_path):
     os.chdir(project_path)
 
 
-def load_abs_lookup(ws, hitran_split_artscat5_path, atm_batch_path=None,
+def load_abs_lookup(ws, hitran_split_artscat5_path=None, atm_batch_path=None,
                     abs_lookup_base_path=None, abs_lookup_path=None, f_ranges=None):
     """
     Load existing absorption lookup table or create one in case it does
@@ -839,3 +840,49 @@ def save_covariances(z, p, atm_batch_path, abs_species=None, fmt='binary', path=
             'abs_species - H2O': 'h2o_vmr',
         }
         xml.save(S, path + 'covariance_{}.xml'.format(species_strings[species]), format=fmt)
+
+
+def plot_profiles(project_path, batch_start, batch_end):
+    """
+    Plot basic profiles of temperature and humidity for each profile in the
+    retrieved batch of profiles.
+    Parameters
+    ----------
+    project_path
+    batch_start
+    batch_end
+
+    Returns
+    -------
+
+    """
+    p = xml.load(os.path.join(project_path, 'a_priori/p.xml'))
+    a_priori_h2o_vmr = xml.load(
+        os.path.join(project_path,
+                     f'a_priori/h2o_vmr_batch_profiles_{batch_start}-{batch_end}.xml'))
+    a_priori_t = xml.load(
+        os.path.join(project_path,
+                     f'a_priori/temperature_batch_profiles_{batch_start}-{batch_end}.xml'))
+    true_atm_fields = xml.load(os.path.join(project_path, 'observations/atm_fields.xml'))
+    true_h2o_vmr = [true_atm_fields[ibatch][2][:, 0, 0] for ibatch in range(batch_start, batch_end)]
+    true_t = [true_atm_fields[ibatch][0][:, 0, 0] for ibatch in range(batch_start, batch_end)]
+    retrieved_h2o_vmr = xml.load(
+        os.path.join(project_path,
+                     f'retrieval_output/h2o_vmr_batch_profiles_{batch_start}-{batch_end}.xml'))
+    retrieved_t = xml.load(
+        os.path.join(project_path,
+                     f'retrieval_output/temperature_batch_profiles_{batch_start}-{batch_end}.xml'))
+    for ibatch in range(batch_start, batch_end):
+        fig, axs = plt.subplots(ncols=2)
+        profile_p(p, a_priori_t[ibatch], ax=axs[0])
+        profile_p(p, true_t[ibatch], ax=axs[0])
+        profile_p(p, retrieved_t[ibatch], ax=axs[0])
+
+        profile_p(p, a_priori_h2o_vmr[ibatch], ax=axs[1], label='a priori')
+        profile_p(p, true_h2o_vmr[ibatch], ax=axs[1], label='true')
+        profile_p(p, retrieved_h2o_vmr[ibatch], ax=axs[1], label='retrieved')
+        plt.savefig(os.path.join(project_path,
+                                 f'plots/profile_plot_batch_{batch_start}-{batch_end}'))
+        axs[0].set_xlabel('Temperature [K]')
+        axs[1].set_xlabel('H$_2$O VMR [-]')
+        axs[0].legend()
